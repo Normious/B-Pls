@@ -1,142 +1,176 @@
-# B-Pls — Barcode / Product Lookup Service
+# B-Pls — Day 20
 
-Centralized barcode-to-product lookup API. Give it an EAN, UPC, or ISBN and it
-returns structured product data — name, brand, category, image, nutrition,
-ingredients, allergens, or book metadata. All data comes from free, open APIs
-with no keys required.
+[![Local](https://img.shields.io/badge/Local-localhost:4011-yellowgreen)](http://localhost:4011) [![Fastify](https://img.shields.io/badge/Fastify-4.x-orange)](https://fastify.dev) [![SQLite](https://img.shields.io/badge/SQLite-better--sqlite3-blue)](https://github.com/WiseLibs/better-sqlite3) [![Node](https://img.shields.io/badge/Node-20+-green)](https://nodejs.org) [![Docker](https://img.shields.io/badge/Docker-ready-2496ED)](https://www.docker.com)
 
-**Stack:** Node.js 20+ · Fastify 4 · SQLite (better-sqlite3) · node-cache
-**Port:** `4011` · **Cost:** $0/month · **Status:** ✅ Production ready (v1.0.0)
+**Local:** `http://localhost:4011` — `GET /` → `{"service":"B-Pls","version":"1.0.0",…}` | `GET /health` → `{"status":"ok",…}`
 
-> Full build spec: [`B-Pls.md`](./B-Pls.md). Endpoint reference: [`docs/API.md`](./docs/API.md).
-> Operations: [`docs/OPERATIONS.md`](./docs/OPERATIONS.md). Design: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
-> Interactive diagram: [`docs/bpls-architecture.html`](./docs/bpls-architecture.html) (open in a browser).
+Centralized barcode-to-product lookup microservice. **Fastify + SQLite + Node**. Single lookup point for the 30 Services challenge.
 
-## Features
+> **Docs:** [Interactive Architecture](docs/bpls-architecture.html) • [API](docs/API.md) • [Operations](docs/OPERATIONS.md) • [Architecture](docs/ARCHITECTURE.md) • [Changelog](CHANGELOG.md) • [TDS](B-Pls.md)
 
-- **Lookup by barcode** — EAN-13, EAN-8, UPC-A, UPC-E, ISBN-10, ISBN-13
-- **Check-digit validation first** — rejects typos locally before any upstream call
-- **Multi-source aggregation** — Open Food Facts, Open Beauty Facts, Open Pet Food
-  Facts, Open Products Facts, Open Library (ISBN)
-- **2-layer cache** — memory (1 h, ~2 ms) + SQLite (30 d, ~14 ms) + negative cache (1 d)
-- **Batch lookup** — up to 50 barcodes per request
-- **Search & category browse** over the local product cache
-- **Multi-tenant** — per-project `X-API-Key` auth, per-endpoint usage logs, daily summaries
-- **Stats** — cache hit rate, upstream calls saved, breakdown by source
+## Architecture — Interactive + Big Preview
 
-## Quickstart
+[![B-Pls Architecture — 2048×1320](docs/bpls-architecture.visual-check.2048x1320.light.png)](docs/bpls-architecture.html)
 
-```bash
-npm install
-npm run migrate   # create SQLite schema in ./data/bpls.db
-npm run seed      # Shop A + Gig4Gig API keys
-npm start         # → http://localhost:4011
+> **Big preview** (2048×1320 light — 174 KB) — click for interactive pan/zoom/trace + light/dark + PNG export. Also available: [dark variant](docs/bpls-architecture.visual-check.2048x1320.dark.png) & [1440×900 light](docs/bpls-architecture.visual-check.1440x900.light.png). Full showcase: 9/9 checks, 0 errors, visual-check pass.
+
+## Stack
+- **Runtime:** Node.js 20+ (dev verified on 24, Docker on 20)
+- **Framework:** Fastify 4 + `@fastify/cors` + `@fastify/helmet`
+- **DB:** SQLite via better-sqlite3 (WAL) — projects + product cache + usage + daily summaries
+- **Cache:** node-cache L1 (1 h) + SQLite L2 (30 d) + negative cache (1 d)
+- **Upstream:** Open Food/Beauty/PetFood/Products Facts + Open Library (ISBN, modern `/isbn` fallback)
+- **Auth:** per-project `X-API-Key` header, inactive keys 401
+
+## Project Structure
+```
+.
+├── src/server.js                # Fastify wiring, public /health + /
+├── src/config.js                # .env → typed config (ports, TTLs, upstreams, limits)
+├── src/db.js                    # SQLite access: projects, cache, search, logs, stats
+├── src/cache.js                 # L1 memory cache (node-cache)
+├── src/normalizer.js            # unified product + book schema
+├── src/barcode/validator.js     # EAN/UPC/ISBN check digits
+├── src/barcode/classifier.js    # source hinting (ISBN → books)
+├── src/upstream/                # openfoodfacts (+beauty/pet/products), openlibrary, aggregator
+├── src/routes/                  # lookup (+batch), validate, search, category, stats
+├── src/middleware/auth.js       # X-API-Key → project
+├── src/migrate.js src/seed.js   # CLI: migrate / seed Shop A + Gig4Gig keys
+├── migrations/0001_init.sql     # 4 tables + indexes
+├── test/selfcheck.js            # offline logic check (validator, classifier, normalizers)
+├── docs/
+│   ├── bpls-architecture.html   # interactive diagram (showcase, visual-check pass)
+│   ├── bpls-architecture.visual-check.*.png  # light/dark previews
+│   ├── API.md                   # full endpoint spec
+│   ├── OPERATIONS.md            # deploy, tenants, maintenance, troubleshooting
+│   └── ARCHITECTURE.md          # request flow, cache tiers, decisions
+├── Dockerfile                   # node:20-slim + build tools (native sqlite compile)
+├── docker-compose.yml           # :4011 + bpls_data volume
+├── ecosystem.config.js          # PM2 single-fork app
+├── .env.example                 # → .env (local secrets/config)
+├── B-Pls.md                     # TDS v1.0.0
+├── CHANGELOG.md                 # as-built deviations from spec
+└── README.md
 ```
 
-Or with Docker (Linux, production-parity):
+## Quick Start (10 mins)
 
 ```bash
+# 1. Install
+npm install
+
+# 2. Configure
+cp .env.example .env   # (Windows: copy manually — .env is git-ignored)
+# IMPORTANT: set USER_AGENT with a real contact (Open*Facts policy)
+
+# 3. Migrate
+npm run migrate
+# → ./data/bpls.db (also auto-migrates on boot)
+
+# 4. Seed tenants
+npm run seed
+# → shop-a-bpls-key-2026 (all sources) + gig4gig-bpls-key-2026 (products+books)
+
+# 5. Run
+npm start
+# → http://localhost:4011 (dev: npm run dev)
+
+# ——— OR via Docker (production-parity) ———
 docker compose up --build -d
 docker compose exec bpls npm run seed
 ```
 
-## Try it
+## API
+
+All JSON. Base: `http://localhost:4011` — full spec in [docs/API.md](docs/API.md).
+Auth: `X-API-Key: shop-a-bpls-key-2026` on everything except `/` and `/health`.
+
+### GET /barcode/validate/:code ⭐ (no upstream call)
+`200` → `{ valid, type, normalized, reason }` | types: `ean13 ean8 upca upce isbn13 isbn10`
+
+### GET /barcode/:code
+`200` → `{ success, barcode, barcode_type, cache: "memory"|"sqlite"|"miss", source, product, duration_ms }` | `400` invalid barcode | `404` not found in any source
+Query: `?sources=food,books` (override order) · `?refresh=true` (bypass caches)
+
+### POST /barcode/batch
+```json
+{ "barcodes": ["5449000000996", "9780140328721"], "sources": ["food", "books"] }
+```
+`200` → `{ success, total, found, duration_ms, results: [{ barcode, success, cache, product }] }` | `400` over 50 items
+
+### GET /search?q=&limit=&offset= ⭐ (local cache)
+`200` → `{ query, total, count, results }` | `400` missing `q`
+
+### GET /category/:cat
+`200` → `{ category, total, count, results }` — same mechanics as search
+
+### GET /stats?days= ⭐ (per-project analytics)
+`200` → `{ totals: { total_lookups, cache_hits, cache_hit_rate_percent, upstream_calls, upstream_saved, … }, by_source, memory_cache }`
+
+### GET / , GET /health
+Public → service index / `{ status: "ok", … }`
+
+## Testing (cURL) — Local
 
 ```bash
-KEY=shop-a-bpls-key-2026
+BASE="http://localhost:4011"
+KEY="shop-a-bpls-key-2026"
 
-# Validate (no upstream call, <1 ms)
-curl -H "X-API-Key: $KEY" localhost:4011/barcode/validate/5449000000996
+# validate (local only, <1 ms)
+curl -H "X-API-Key: $KEY" $BASE/barcode/validate/5449000000996
 
-# Look up Coca-Cola (first call hits upstream, repeat hits memory cache)
-curl -H "X-API-Key: $KEY" localhost:4011/barcode/5449000000996
+# lookup Coca-Cola (1st = upstream miss, 2nd = memory ~2 ms)
+curl -H "X-API-Key: $KEY" $BASE/barcode/5449000000996
+curl -H "X-API-Key: $KEY" $BASE/barcode/5449000000996
 
-# Book by ISBN
-curl -H "X-API-Key: $KEY" "localhost:4011/barcode/9780140328721?refresh=true"
+# book by ISBN (bypass cache)
+curl -H "X-API-Key: $KEY" "$BASE/barcode/9780140328721?refresh=true"
 
-# Batch
-curl -X POST -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
-  -d '{"barcodes":["5449000000996","9780140328721","3017620422003"]}' \
-  localhost:4011/barcode/batch
+# batch
+curl -X POST $BASE/barcode/batch -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+  -d '{"barcodes":["5449000000996","9780140328721","3017620422003"]}'
 
-# Search the local cache, browse a category, view stats
-curl -H "X-API-Key: $KEY" "localhost:4011/search?q=Coca"
-curl -H "X-API-Key: $KEY" "localhost:4011/category/cola"
-curl -H "X-API-Key: $KEY" "localhost:4011/stats?days=30"
+# search + category (local cache) + stats
+curl -H "X-API-Key: $KEY" "$BASE/search?q=Coca"
+curl -H "X-API-Key: $KEY" "$BASE/category/cola"
+curl -H "X-API-Key: $KEY" "$BASE/stats?days=30"
+
+# offline logic check (no network)
+node test/selfcheck.js
 ```
 
-Seeded API keys: `shop-a-bpls-key-2026` (all sources) · `gig4gig-bpls-key-2026`
-(products + books). Set a real contact in `USER_AGENT` — Open\*Facts requires it.
+## Integration (for Shop A, Warehouse, Gig4Gig)
 
-## Configuration
+1. Scan barcode client-side, `GET {BPLS_URL}/barcode/:code` with `X-API-Key`
+2. `200` → auto-fill from `product` (`name`, `brand`, `categories[0]`, `image_url`, `ingredients_text`)
+3. `404` → flag for manual entry (result is negative-cached 1 day, don't retry in a loop)
+4. Shipments: `POST /barcode/batch` (≤50), split `results` into received vs unknown
+5. *Cache locally* — hit rate after warmup is ~90%+, upstream is the slow path
 
-All settings come from `.env` (see `.env.example`). Key variables:
+## Security Notes
 
-| Variable | Default | Purpose |
-| :--- | :--- | :--- |
-| `PORT` | `4011` | Listen port |
-| `DATABASE_PATH` | `./data/bpls.db` | SQLite file |
-| `MEMORY_CACHE_TTL` | `3600` | Memory cache, seconds (1 h) |
-| `SQLITE_CACHE_TTL` | `2592000` | SQLite cache, seconds (30 d) |
-| `NEGATIVE_CACHE_TTL` | `86400` | Not-found cache, seconds (1 d) |
-| `USER_AGENT` | `B-Pls/1.0 (…)` | Required by upstream APIs |
-| `MAX_BATCH_SIZE` | `50` | Batch limit |
-| `UPSTREAM_TIMEOUT_MS` | `10000` | Per-upstream-call timeout |
+- Auth: per-project opaque API keys in `X-API-Key`; `is_active = 0` kills a key instantly (401)
+- No passwords or PII stored — only product JSON + anonymous usage counters
+- Upstream calls carry a real-contact `USER_AGENT` (Open*Facts policy)
+- `@fastify/helmet` headers + CORS on; no secrets in repo (`.env` git-ignored, `.env.example` only)
+- Batch capped at 50, upstream calls individually timed-out at 10 s (no hung requests)
 
-## Project structure
+### Ponytail decisions (skipped → when to add)
+- No Redis/ORM/search engine — node-cache + SQLite + LIKE is shorter; add when lookups outgrow one box
+- No per-source upstream files with real logic — thin re-export wrappers; add when a source needs custom parsing
+- No expiry scheduler — `purgeExpiredProducts()` exists; add a cron tick when the DB grows stale rows
+- No multi-stage Docker slim-down — single stage with build tools; add when image size matters
+- No refresh-token-style key rotation — add `last_used_at` + rotation when tenants demand it
 
-```
-├── migrations/0001_init.sql     # projects, product_cache, usage_log, daily_summary
-├── src/
-│   ├── server.js                # Fastify wiring, public /health + /
-│   ├── config.js db.js cache.js # env, SQLite access, memory cache
-│   ├── migrate.js seed.js       # CLI: migrate / seed tenants
-│   ├── normalizer.js            # unified product + book schema
-│   ├── barcode/validator.js     # EAN/UPC/ISBN check digits
-│   ├── barcode/classifier.js    # source hinting (ISBN → books)
-│   ├── upstream/                # openfoodfacts (+beauty/pet/products), openlibrary, aggregator
-│   ├── routes/                  # lookup (+batch), validate, search, category, stats
-│   └── middleware/auth.js       # X-API-Key → project
-├── test/selfcheck.js            # offline logic check: node test/selfcheck.js
-├── docs/                        # API, OPERATIONS, ARCHITECTURE
-└── docker-compose.yml Dockerfile ecosystem.config.js
-```
+## Deploy Checklist
 
-## Endpoints
-
-| Method | Path | Auth | Purpose |
-| :--- | :--- | :---: | :--- |
-| `GET` | `/health`, `/` | no | Health check, service index |
-| `GET` | `/barcode/validate/:code` | yes | Check-digit validation only |
-| `GET` | `/barcode/:code` | yes | Lookup (`?sources=`, `?refresh=true`) |
-| `POST` | `/barcode/batch` | yes | Up to 50 barcodes |
-| `GET` | `/search?q=` | yes | Full-text over local cache |
-| `GET` | `/category/:cat` | yes | Browse local cache by category |
-| `GET` | `/stats?days=` | yes | Hit rate, savings, by-source |
-
-Details and response shapes: [`docs/API.md`](./docs/API.md).
-
-## Testing
-
-```bash
-node test/selfcheck.js   # offline: validator, classifier, normalizers (no network)
-```
-
-Live verification used during build (all green locally + in Docker):
-auth 401s · validation matrix · cold/miss → memory → SQLite tiers ·
-batch limits · search/category · stats · multi-tenant isolation.
-
-## Notes & deviations from spec
-
-- `better-sqlite3` **v12** (spec: v9) — v9 has no Node 24 prebuilds.
-- Docker base **node:20-slim + build tools** (spec: alpine) — no musl prebuilds;
-  `.dockerignore` prevents host `node_modules` shadowing the Linux install.
-- `openlibrary.js` tries the legacy `bibkeys` API, then falls back to modern
-  `/isbn/*.json` with author/work enrichment — the legacy endpoint returns `{}`
-  for valid ISBNs as of 2026, and Windows Node cannot complete OpenLibrary's TLS
-  handshake (Linux/Docker unaffected).
-- Spec example `9780140328721` resolves to *"Fantastic Mr. Fox"*, not *"Matilda"*.
+- [ ] `.env` set (`USER_AGENT` with real contact, `DATABASE_PATH` correct)
+- [ ] `migrations/0001_init.sql` applied (`npm run migrate` or auto on boot)
+- [ ] `npm run seed` executed (or tenants inserted manually)
+- [ ] `npm start` serves `:4011` (dry-run: validate → lookup → stats flow)
+- [ ] Docker: `docker compose up --build -d` + exec seed + `GET /health`
+- [ ] Only one server owns port 4011 (local `node` vs container collide)
+- [ ] Share base URL + API key with consumers
 
 ## License
-
-MIT — Emmanuel Phiri, September 2026.
+MIT — Emmanuel Phiri. Reuse for all 30 services.
