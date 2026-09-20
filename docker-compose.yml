@@ -1,0 +1,17 @@
+services:
+  bpls:
+    build: .
+    container_name: bpls
+    restart: unless-stopped
+    ports:
+      - "4011:4011"
+    environment:
+      - NODE_ENV=production
+      - PORT=4011
+      - DATABASE_PATH=/app/data/bpls.db
+      - USER_AGENT=B-Pls/1.0 (your-email@example.com)
+    volumes:
+      - bpls_data:/app/data
+
+volumes:
+  bpls_data:
