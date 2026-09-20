@@ -1,5 +1,7 @@
 # B-Pls Architecture (v1.0.0, as built)
 
+> Interactive diagram: [`bpls-architecture.html`](./bpls-architecture.html) (open in a browser).
+
 ## Request flow
 
 ```

@@ -10,6 +10,7 @@ with no keys required.
 
 > Full build spec: [`B-Pls.md`](./B-Pls.md). Endpoint reference: [`docs/API.md`](./docs/API.md).
 > Operations: [`docs/OPERATIONS.md`](./docs/OPERATIONS.md). Design: [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md).
+> Interactive diagram: [`docs/bpls-architecture.html`](./docs/bpls-architecture.html) (open in a browser).
 
 ## Features
 
